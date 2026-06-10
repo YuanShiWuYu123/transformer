@@ -3,4 +3,4 @@ __pycache__/
 *.pt
 .claude/
 .deepseek/
-.env
+.env.vscode/

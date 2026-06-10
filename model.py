@@ -43,28 +43,28 @@ class CausalSelfAttention(nn.Module):
         - 因果：位置 i 的 query 不能看到 key 位置 j>i；可用上三角为 True 的 bool 与 masked_fill(..., -inf)，
           在最后一维上 softmax 后禁止位置为 0 概率，而非 NaN（注意 -inf 经 softmax 为 0）。
         """
-        b, t, c = x.size()
-
+        b,t,c = x.size()
         q = self.w_q(x)
         k = self.w_k(x)
         v = self.w_v(x)
 
-        q = q.view(b, t, self.n_head, self.d_head).transpose(1, 2)
-        k = k.view(b, t, self.n_head, self.d_head).transpose(1, 2)
-        v = v.view(b, t, self.n_head, self.d_head).transpose(1, 2)
+        q = q.view(b,t,self.n_head,self.d_head).transpose(1,2)
+        k = k.view(b,t,self.n_head,self.d_head).transpose(1,2)
+        v = v.view(b,t,self.n_head,self.d_head).transpose(1,2)
 
-        scale = self.d_head ** -0.5
-        att = (q @ k.transpose(-2, -1)) * scale
+        scale = (self.d_head)**(-0.5)
+        att = (q @ k.transpose(-2,-1))*scale
 
-        mask = torch.triu(torch.ones(t, t, device=x.device, dtype=torch.bool), diagonal=1)
-        att = att.masked_fill(mask, float("-inf"))
-
-        att = torch.softmax(att, dim=-1)
+        mask = torch.triu(torch.ones(t,t,device=x.device,dtype=torch.bool),diagonal=1)
+        att = att.masked_fill(mask,float("-inf"))
+        att = torch.softmax(att,dim=-1)
         att = self.dropout(att)
 
         y = att @ v
-        y = y.transpose(1, 2).contiguous().view(b, t, c)
+        y = y.transpose(1,2).reshape(b,t,c)
         return self.w_o(y)
+    
+
 
 
 class FeedForward(nn.Module):
@@ -79,17 +79,20 @@ class FeedForward(nn.Module):
         self.d_ff = d_ff
         self.dropout_p = float(dropout)
         self.net = nn.Sequential(
-            nn.Linear(d_model, d_ff),
+            nn.Linear(d_model,d_ff),
             nn.GELU(),
-            nn.Linear(d_ff, d_model),
+            nn.Linear(d_ff,d_model),
             nn.Dropout(dropout),
         )
+
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         x: (B, T, d_model)，返回 (B, T, d_model)。
         """
         return self.net(x)
+
+    
 
 
 class TransformerBlock(nn.Module):
