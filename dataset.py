@@ -38,6 +38,7 @@ class PoetryBlockDataset(Dataset):
         block_size: int,
         num_samples: Optional[int] = None,
         sample_random: bool = True,
+        poem_start_token_id: Optional[int] = None,
     ) -> None:
         if not os.path.isfile(data_path):
             raise FileNotFoundError(data_path)
@@ -49,22 +50,39 @@ class PoetryBlockDataset(Dataset):
         if n < self.block_size + 1:
             raise ValueError(f"序列太短: {n}，需 > block_size+1")
         self._max_i = n - self.block_size
+        # 诗头对齐：给定分隔符 id（如换行符）时，起窗下标只取「每首诗的第一个字」，
+        # 即全文第 0 位与每个分隔符的下一位，让模型学到「位置 0 = 诗的开头」。
+        self._starts: Optional[torch.Tensor] = None
+        if poem_start_token_id is not None:
+            sep_pos = (self.data == int(poem_start_token_id)).nonzero(as_tuple=True)[0]
+            starts = torch.cat([torch.zeros(1, dtype=torch.long), sep_pos + 1])
+            starts = starts[starts < self._max_i]
+            if starts.numel() == 0:
+                raise ValueError("找不到可用的诗头起点，请检查 poem_start_token_id")
+            self._starts = starts
+        # 可选起点总数：诗头对齐时为诗头个数，否则为全部滑窗数
+        pool = int(self._starts.numel()) if self._starts is not None else int(self._max_i)
         if num_samples is not None and int(num_samples) > 0:
-            self._len = min(int(num_samples), self._max_i)
+            self._len = min(int(num_samples), pool)
         else:
-            self._len = int(self._max_i)
-        # 显式子采样时：在长序列上随机起窗，避免一个 epoch 扫完全部滑窗
+            self._len = pool
+        # 显式子采样时：在可选起点中随机挑选，避免一个 epoch 扫完全部起点
         self._sample_random = (
             bool(sample_random)
             and (num_samples is not None and int(num_samples) > 0)
-            and (self._len < self._max_i)
+            and (self._len < pool)
         )
 
     def __len__(self) -> int:
         return int(self._len)
 
     def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
-        if self._sample_random:
+        if self._starts is not None:
+            if self._sample_random:
+                i = int(self._starts[random.randrange(self._starts.numel())])
+            else:
+                i = int(self._starts[int(idx) % self._starts.numel()])
+        elif self._sample_random:
             i = random.randrange(0, self._max_i)
         else:
             i = int(idx) % int(self._max_i)

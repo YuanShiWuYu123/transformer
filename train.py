@@ -68,6 +68,10 @@ TRAIN_NUM_SAMPLES = 50_000
 # 0=按 DataLoader 长度跑满本 epoch
 MAX_TRAIN_BATCHES = 0
 
+# 训练窗口是否只从每首诗的开头起窗（1=是，0=任意位置随机起窗）。
+# 对齐后模型可学到「位置 0 = 诗的开头」，单字起笔生成更像完整一首；验证集不受影响
+ALIGN_POEM_START = 1
+
 # 未安装 tqdm 时，无进度条，每隔多少 batch 打印一次当前步 loss；0=不打印
 LOG_INTERVAL = 50
 
@@ -164,6 +168,12 @@ def main() -> None:
         default=LOG_INTERVAL,
         help="无 tqdm 时每多少个 batch 打印一次训练 loss；0 表示不打印",
     )
+    p.add_argument(
+        "--align_poem_start",
+        type=int,
+        default=ALIGN_POEM_START,
+        help="1=训练窗口只从每首诗开头起窗；0=任意位置随机起窗（原行为）",
+    )
     p.add_argument("--seed", type=int, default=SEED)
     p.add_argument("--log_plot", type=str, default=LOSS_PLOT, help="保存 loss 曲线图路径")
     args = p.parse_args()
@@ -176,8 +186,12 @@ def main() -> None:
     device = get_device()
     print("设备:", device)
 
-    _, __, vs = load_vocab_json(args.vocab)
+    stoi, _itos, vs = load_vocab_json(args.vocab)
     vocab_size = vs
+    # 诗头对齐起窗：用换行符 id 标记「一首诗的结束/下一首的开始」
+    poem_start_id = stoi.get("\n") if int(args.align_poem_start) else None
+    if int(args.align_poem_start) and poem_start_id is None:
+        print("警告: 词表中无换行符，已退回任意位置起窗", file=sys.stderr)
 
     try:
         from tqdm import tqdm
@@ -187,7 +201,11 @@ def main() -> None:
     train_n = int(args.train_num_samples) if int(args.train_num_samples) > 0 else None
     print("正在加载训练/验证张量 (train_data.pt 可能较大，需等待片刻)...", flush=True)
     train_ds = PoetryBlockDataset(
-        args.train_pt, args.block_size, num_samples=train_n, sample_random=True
+        args.train_pt,
+        args.block_size,
+        num_samples=train_n,
+        sample_random=True,
+        poem_start_token_id=poem_start_id,
     )
     val_ds = PoetryBlockDataset(args.val_pt, args.block_size, num_samples=None, sample_random=False)
     ntok_tr = int(train_ds.data.size(0))  # type: ignore[attr-defined]

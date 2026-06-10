@@ -9,7 +9,7 @@
 import argparse
 import os
 import sys
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import torch
 import torch.nn.functional as F
@@ -21,7 +21,11 @@ from train import get_device
 
 @torch.no_grad()
 def sample_next(
-    model: CharGPT, idx: torch.Tensor, temperature: float, device: torch.device
+    model: CharGPT,
+    idx: torch.Tensor,
+    temperature: float,
+    device: torch.device,
+    newline_id: Optional[int] = None,
 ) -> int:
     """idx: (1, t)，取**最后一个**时间步的 logits 采样下一 token。"""
     model.eval()
@@ -29,7 +33,15 @@ def sample_next(
         raise ValueError("序列为空")
     # 超长只保留最后 block_size
     t = min(idx.size(1), model.block_size)
-    x = idx[:, -t:].contiguous()
+    x = idx[:, -t:]
+    # 诗头对齐截窗：训练窗口若只从诗头起（位置 0 = 诗的第一个字），滑窗时也应
+    # 把起点对齐到窗内最近一个换行符的下一位，保持训练/推理分布一致
+    if newline_id is not None and idx.size(1) > model.block_size:
+        row = x[0]
+        nl_pos = (row[:-1] == newline_id).nonzero(as_tuple=True)[0]  # 排除末位，避免切出空窗
+        if nl_pos.numel() > 0:
+            x = x[:, int(nl_pos[-1]) + 1 :]
+    x = x.contiguous()
     logits, _ = model(x)  # (1, t, V)
     last = logits[:, -1, :] / max(temperature, 1e-6)
     p = F.softmax(last, dim=-1)
@@ -91,6 +103,7 @@ def generate_one(
             torch.tensor([out_ids], device=device, dtype=torch.long),
             temperature,
             device,
+            newline_id=newline_id,
         )
         out_ids.append(nxt)
         if stop_newline and newline_id is not None and nxt == newline_id:
