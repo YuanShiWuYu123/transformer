@@ -35,7 +35,7 @@ def main():
     print("\n" + "=" * 50)
     print("步骤 2：随机抽样最多 100000 条并保存为 poetry.txt")
     print("=" * 50)
-    n_samples = 100000
+    n_samples = 300000  # 源数据集共 234720 首，设大于总数即全部使用
     actual_samples = min(n_samples, len(dataset))
     subset = dataset.select(range(actual_samples))
 

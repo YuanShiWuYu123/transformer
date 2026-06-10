@@ -207,7 +207,14 @@ def main() -> None:
         sample_random=True,
         poem_start_token_id=poem_start_id,
     )
-    val_ds = PoetryBlockDataset(args.val_pt, args.block_size, num_samples=None, sample_random=False)
+    # 验证集与训练同分布起窗（诗头对齐时验证也对齐），否则 val_loss 会因分布不匹配虚高
+    val_ds = PoetryBlockDataset(
+        args.val_pt,
+        args.block_size,
+        num_samples=None,
+        sample_random=False,
+        poem_start_token_id=poem_start_id,
+    )
     ntok_tr = int(train_ds.data.size(0))  # type: ignore[attr-defined]
     nbatch_tr = (len(train_ds) + args.batch_size - 1) // args.batch_size
     nbatch_effective = nbatch_tr

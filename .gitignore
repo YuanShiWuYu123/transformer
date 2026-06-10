@@ -5,3 +5,4 @@ __pycache__/
 .deepseek/
 .env
 .vscode/
+poetry.txt
